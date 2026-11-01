@@ -1,0 +1,11 @@
+[package]
+name = "freejitsu"
+version = "0.1.0"
+edition = "2024"
+description = "Scan button daemon for one ScanSnap iX500"
+license = "MIT"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+libc = "0.2"
+getrandom = "0.3"
