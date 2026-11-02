@@ -151,7 +151,7 @@ fn capture(cfg: &Config, info: &ScannerInfo, identity: &Identity) -> Result<std:
 
     let result = match ScsiChannel::open(info, identity.mac) {
         Ok(mut channel) => {
-            let result = scan::scan(&mut channel, dpi, cfg.page, &mut |sheet| {
+            let result = scan::scan(&mut channel, dpi, cfg.page.into(), &mut |sheet| {
                 pdf.add_page(&sheet.front, dpi.as_u16())?;
                 if !simplex {
                     pdf.add_page(&sheet.back, dpi.as_u16())?;

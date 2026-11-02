@@ -27,10 +27,15 @@ fn scans_two_sheets_in_order_and_releases_on_a_second_connection() {
 
     let mut channel = ScsiChannel::open(&info, MAC).expect("open scan");
     let mut sheets: Vec<Sheet> = Vec::new();
-    let count = scan(&mut channel, Dpi::D300, PageSize::Auto, &mut |sheet| {
-        sheets.push(sheet);
-        Ok(())
-    })
+    let count = scan(
+        &mut channel,
+        Dpi::D300,
+        PageSize::Auto.into(),
+        &mut |sheet| {
+            sheets.push(sheet);
+            Ok(())
+        },
+    )
     .expect("scan");
     drop(channel);
     release(&info, MAC).expect("release");
@@ -67,8 +72,8 @@ fn scans_two_sheets_in_order_and_releases_on_a_second_connection() {
     assert_eq!(log.cdbs[12], info_cdb(1));
     assert_eq!(log.cdbs[3], [0xe9, 0, 0, 0, 0, 0, 0, 0x20, 0, 0]);
     assert_eq!(log.cdbs[4], [0xd4, 0, 0, 0, 0x50, 0]);
-    assert_eq!(log.out[3], window_block(Dpi::D300, PageSize::Auto));
-    assert_eq!(log.out[4], param_block(Dpi::D300, PageSize::Auto));
+    assert_eq!(log.out[3], window_block(Dpi::D300, PageSize::Auto.into()));
+    assert_eq!(log.out[4], param_block(Dpi::D300, PageSize::Auto.into()));
     assert_eq!(log.out[1], [0u8; 8]);
 }
 
@@ -85,10 +90,15 @@ fn joins_multi_chunk_images() {
 
     let mut channel = ScsiChannel::open(&info, MAC).expect("open scan");
     let mut sheets: Vec<Sheet> = Vec::new();
-    let count = scan(&mut channel, Dpi::D300, PageSize::Auto, &mut |sheet| {
-        sheets.push(sheet);
-        Ok(())
-    })
+    let count = scan(
+        &mut channel,
+        Dpi::D300,
+        PageSize::Auto.into(),
+        &mut |sheet| {
+            sheets.push(sheet);
+            Ok(())
+        },
+    )
     .expect("scan");
     drop(channel);
 
@@ -108,10 +118,15 @@ fn jam_after_one_sheet_returns_a_feed_error() {
 
     let mut channel = ScsiChannel::open(&info, MAC).expect("open scan");
     let mut sheets: Vec<Sheet> = Vec::new();
-    let result = scan(&mut channel, Dpi::D300, PageSize::Auto, &mut |sheet| {
-        sheets.push(sheet);
-        Ok(())
-    });
+    let result = scan(
+        &mut channel,
+        Dpi::D300,
+        PageSize::Auto.into(),
+        &mut |sheet| {
+            sheets.push(sheet);
+            Ok(())
+        },
+    );
     drop(channel);
 
     assert!(matches!(result, Err(Error::Feed("paper jam"))));
@@ -124,7 +139,9 @@ fn empty_feeder_is_no_paper() {
     let info = info(fake.port);
 
     let mut channel = ScsiChannel::open(&info, MAC).expect("open scan");
-    let result = scan(&mut channel, Dpi::D300, PageSize::Auto, &mut |_| Ok(()));
+    let result = scan(&mut channel, Dpi::D300, PageSize::Auto.into(), &mut |_| {
+        Ok(())
+    });
     drop(channel);
 
     assert!(matches!(result, Err(Error::NoPaper)));

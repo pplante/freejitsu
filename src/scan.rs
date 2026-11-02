@@ -22,25 +22,41 @@ pub struct Sheet {
     pub info: ImageInfo,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Area {
+    pub width: u32,
+    pub height: u32,
+    pub automatic: bool,
+}
+
+impl From<PageSize> for Area {
+    fn from(page: PageSize) -> Self {
+        let (width, height) = page.dims();
+        Area {
+            width,
+            height,
+            automatic: page.automatic(),
+        }
+    }
+}
+
 /// E9 data block.
-pub fn window_block(dpi: Dpi, page: PageSize) -> [u8; 32] {
-    let (width, height) = page.dims();
+pub fn window_block(dpi: Dpi, area: Area) -> [u8; 32] {
     let mut block = [0u8; 32];
     block[0..2].copy_from_slice(&dpi.as_u16().to_be_bytes());
     block[2..4].copy_from_slice(&dpi.as_u16().to_be_bytes());
-    block[4..8].copy_from_slice(&width.to_be_bytes());
-    block[8..12].copy_from_slice(&height.to_be_bytes());
+    block[4..8].copy_from_slice(&area.width.to_be_bytes());
+    block[8..12].copy_from_slice(&area.height.to_be_bytes());
     block[12] = 0x05;
     block
 }
 
 /// D4 data block: 32 parameter bytes plus the 48 byte window descriptor.
-pub fn param_block(dpi: Dpi, page: PageSize) -> [u8; 80] {
-    let (width, height) = page.dims();
+pub fn param_block(dpi: Dpi, area: Area) -> [u8; 80] {
     let dpi = dpi.as_u16();
     let mut block = [0u8; 80];
     block[1] = 3;
-    let auto = u8::from(page.automatic());
+    let auto = u8::from(area.automatic);
     block[2] = auto;
     block[3] = auto;
     block[4] = 0xd0;
@@ -64,8 +80,8 @@ pub fn param_block(dpi: Dpi, page: PageSize) -> [u8; 80] {
         600 => 0x0a,
         _ => 0,
     };
-    block[42..46].copy_from_slice(&width.to_be_bytes());
-    block[46..50].copy_from_slice(&height.to_be_bytes());
+    block[42..46].copy_from_slice(&area.width.to_be_bytes());
+    block[46..50].copy_from_slice(&area.height.to_be_bytes());
     block[50] = 4;
     block
 }
@@ -110,7 +126,7 @@ pub fn parse_image_info(data: &[u8]) -> Result<ImageInfo> {
 pub fn scan(
     channel: &mut ScsiChannel,
     dpi: Dpi,
-    page: PageSize,
+    area: Area,
     on_sheet: &mut dyn FnMut(Sheet) -> Result<()>,
 ) -> Result<usize> {
     channel.hardware_status()?;
@@ -118,10 +134,10 @@ pub fn scan(
     channel.checked(&[0xd8, 0, 0, 0, 0, 0], &[], 0)?;
     channel.checked(
         &[0xe9, 0, 0, 0, 0, 0, 0, 0x20, 0, 0],
-        &window_block(dpi, page),
+        &window_block(dpi, area),
         0,
     )?;
-    channel.checked(&[0xd4, 0, 0, 0, 0x50, 0], &param_block(dpi, page), 0)?;
+    channel.checked(&[0xd4, 0, 0, 0, 0x50, 0], &param_block(dpi, area), 0)?;
     channel.hardware_status()?;
     channel.sense()?;
 

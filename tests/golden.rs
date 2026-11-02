@@ -3,7 +3,7 @@ use std::net::Ipv4Addr;
 use freejitsu::config::{Dpi, PageSize};
 use freejitsu::control::{WallClock, default_password, encode_password, register_body};
 use freejitsu::identity::Identity;
-use freejitsu::scan::{info_cdb, param_block, read_cdb, window_block};
+use freejitsu::scan::{Area, info_cdb, param_block, read_cdb, window_block};
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
@@ -21,18 +21,55 @@ const MODE_600_A4: &str = "00030000d000c1808080808080800000000000000000000000000
 #[test]
 fn window_blocks_match_the_vectors() {
     assert_eq!(
-        hex(&window_block(Dpi::D300, PageSize::Auto)),
+        hex(&window_block(Dpi::D300, PageSize::Auto.into())),
         WINDOW_300_AUTO
     );
-    assert_eq!(hex(&window_block(Dpi::D150, PageSize::A4)), WINDOW_150_A4);
-    assert_eq!(hex(&window_block(Dpi::D600, PageSize::A4)), WINDOW_600_A4);
+    assert_eq!(
+        hex(&window_block(Dpi::D150, PageSize::A4.into())),
+        WINDOW_150_A4
+    );
+    assert_eq!(
+        hex(&window_block(Dpi::D600, PageSize::A4.into())),
+        WINDOW_600_A4
+    );
 }
 
 #[test]
 fn mode_blocks_match_the_vectors() {
-    assert_eq!(hex(&param_block(Dpi::D300, PageSize::Auto)), MODE_300_AUTO);
-    assert_eq!(hex(&param_block(Dpi::D150, PageSize::A4)), MODE_150_A4);
-    assert_eq!(hex(&param_block(Dpi::D600, PageSize::A4)), MODE_600_A4);
+    assert_eq!(
+        hex(&param_block(Dpi::D300, PageSize::Auto.into())),
+        MODE_300_AUTO
+    );
+    assert_eq!(
+        hex(&param_block(Dpi::D150, PageSize::A4.into())),
+        MODE_150_A4
+    );
+    assert_eq!(
+        hex(&param_block(Dpi::D600, PageSize::A4.into())),
+        MODE_600_A4
+    );
+}
+
+#[test]
+fn arbitrary_area_sets_window_and_mode_fields() {
+    let area = Area {
+        width: 2480,
+        height: 3508,
+        automatic: false,
+    };
+    let window = window_block(Dpi::D200, area);
+    assert_eq!(u16::from_be_bytes([window[0], window[1]]), 200);
+    assert_eq!(u32::from_be_bytes(window[4..8].try_into().unwrap()), 2480);
+    assert_eq!(u32::from_be_bytes(window[8..12].try_into().unwrap()), 3508);
+    assert_eq!(window[12], 5);
+
+    let mode = param_block(Dpi::D200, area);
+    assert_eq!(mode[2], 0);
+    assert_eq!(mode[3], 0);
+    assert_eq!(u16::from_be_bytes(mode[34..36].try_into().unwrap()), 200);
+    assert_eq!(u16::from_be_bytes(mode[36..38].try_into().unwrap()), 200);
+    assert_eq!(u32::from_be_bytes(mode[42..46].try_into().unwrap()), 2480);
+    assert_eq!(u32::from_be_bytes(mode[46..50].try_into().unwrap()), 3508);
 }
 
 #[test]
