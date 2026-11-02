@@ -63,6 +63,10 @@ cargo test
 
 The final check is one press on a real iX500. That has run once: firmware 0U00, firmware name `ScanSnapix500`, registration with the stored Wi-Fi password, a duplex scan, and the resulting two-page PDF (embedded JPEGs, 180-degree rotation).
 
+## License
+
+MIT. The protocol documentation and Python reference are from [elte0/scansnack](https://github.com/elte0/scansnack), also MIT; see `LICENSE` and `THIRD-PARTY.md`.
+
 ## Credits
 
 The protocol documentation and the Python reference implementation are from [elte0/scansnack](https://github.com/elte0/scansnack), MIT licensed.
