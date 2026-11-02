@@ -3,6 +3,7 @@ pub mod control;
 pub mod daemon;
 pub mod discovery;
 pub mod error;
+pub mod escl;
 pub mod http;
 pub mod identity;
 pub mod iface;
