@@ -61,7 +61,7 @@ The test suite uses a loopback fake scanner. It covers the registration body, th
 cargo test
 ```
 
-The final check is one press on a real iX500. That has not run yet.
+The final check is one press on a real iX500. That has run once: firmware 0U00, firmware name `ScanSnapix500`, registration with the stored Wi-Fi password, a duplex scan, and the resulting two-page PDF (embedded JPEGs, 180-degree rotation).
 
 ## Credits
 
