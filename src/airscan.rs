@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, Weak};
@@ -13,6 +13,7 @@ use crate::escl::{self, Format, ScanSettings, SettingsError};
 use crate::http;
 use crate::identity::Identity;
 use crate::scan::Sheet;
+use mdns_sd::{ServiceDaemon, ServiceInfo};
 
 const JOB_WAIT: Duration = Duration::from_secs(60);
 const KEPT_JOBS: usize = 10;
@@ -132,6 +133,7 @@ pub struct AirScan {
     info: Mutex<Option<ScannerInfo>>,
     adf: Arc<Mutex<AdfState>>,
     jobs: Mutex<Vec<Arc<Job>>>,
+    mdns: Mutex<Option<ServiceDaemon>>,
 }
 
 impl AirScan {
@@ -150,6 +152,7 @@ impl AirScan {
             info: Mutex::new(None),
             adf: Arc::new(Mutex::new(AdfState::Loaded)),
             jobs: Mutex::new(Vec::new()),
+            mdns: Mutex::new(None),
         });
         let weak = Arc::downgrade(&service);
         let thread = thread::spawn(move || accept_loop(weak));
@@ -166,6 +169,9 @@ impl AirScan {
             *self.info.lock().unwrap() = Some(session.info.clone());
         }
         *self.session.lock().unwrap() = session;
+        if self.info.lock().unwrap().is_some() {
+            self.advertise();
+        }
     }
 
     pub fn note_result(&self, result: &Result<Capture>) {
@@ -200,6 +206,38 @@ impl AirScan {
                 }
             })
             .collect()
+    }
+
+    fn advertise(&self) {
+        let mut slot = self.mdns.lock().unwrap();
+        if slot.is_some() {
+            return;
+        }
+        let Some(info) = self.info.lock().unwrap().clone() else {
+            return;
+        };
+        let instance = escl::instance_name(&info.model, &info.serial);
+        let uuid = escl::device_uuid(&info.model, &info.serial);
+        let ip = crate::iface::local_ip_towards(self.cfg.ip).unwrap_or(Ipv4Addr::LOCALHOST);
+        let properties: HashMap<String, String> =
+            txt_records(&instance, &uuid).into_iter().collect();
+        let registered = (|| -> std::result::Result<ServiceDaemon, Box<dyn std::error::Error>> {
+            let daemon = ServiceDaemon::new()?;
+            let service = ServiceInfo::new(
+                "_uscan._tcp.local.",
+                &instance,
+                &host_name(&info.serial),
+                ip.to_string(),
+                self.local.port(),
+                properties,
+            )?;
+            daemon.register(service)?;
+            Ok(daemon)
+        })();
+        match registered {
+            Ok(daemon) => *slot = Some(daemon),
+            Err(err) => eprintln!("freejitsu: bonjour: {err}"),
+        }
     }
 
     fn capabilities(&self) -> Option<String> {
@@ -354,6 +392,9 @@ impl Drop for AirScan {
         let _ = TcpStream::connect(self.local);
         if let Some(thread) = self.accept.lock().unwrap().take() {
             let _ = thread.join();
+        }
+        if let Some(daemon) = self.mdns.lock().unwrap().take() {
+            let _ = daemon.shutdown();
         }
     }
 }
@@ -513,4 +554,35 @@ fn note_result(adf: &Mutex<AdfState>, result: &Result<Capture>) {
         Err(_) => return,
     };
     *adf.lock().unwrap() = state;
+}
+
+pub fn txt_records(instance: &str, uuid: &str) -> Vec<(String, String)> {
+    [
+        ("txtvers", "1"),
+        ("vers", "2.63"),
+        ("rs", "eSCL"),
+        ("ty", instance),
+        ("pdl", "image/jpeg,application/pdf"),
+        ("uuid", uuid),
+        ("cs", "color"),
+        ("is", "adf"),
+        ("duplex", "T"),
+    ]
+    .into_iter()
+    .map(|(key, value)| (key.to_string(), value.to_string()))
+    .collect()
+}
+
+pub fn host_name(serial: &str) -> String {
+    let label: String = serial
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    format!("freejitsu-{label}.local.")
 }

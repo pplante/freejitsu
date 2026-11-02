@@ -412,3 +412,35 @@ fn cancel_between_sheets_leaves_no_pdf() {
     assert!(canceled, "job did not report cancellation");
     assert!(pdfs(&dir.join("out")).is_empty());
 }
+
+#[test]
+fn txt_records_describe_an_escl_scanner() {
+    let records = freejitsu::airscan::txt_records("ScanSnap iX500 (A0XX012345)", "uuid-1");
+    let get = |key: &str| {
+        records
+            .iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, value)| value.as_str())
+    };
+    assert_eq!(get("txtvers"), Some("1"));
+    assert_eq!(get("vers"), Some("2.63"));
+    assert_eq!(get("rs"), Some("eSCL"));
+    assert_eq!(get("ty"), Some("ScanSnap iX500 (A0XX012345)"));
+    assert_eq!(get("pdl"), Some("image/jpeg,application/pdf"));
+    assert_eq!(get("uuid"), Some("uuid-1"));
+    assert_eq!(get("cs"), Some("color"));
+    assert_eq!(get("is"), Some("adf"));
+    assert_eq!(get("duplex"), Some("T"));
+}
+
+#[test]
+fn host_name_is_a_dns_label() {
+    assert_eq!(
+        freejitsu::airscan::host_name("A0XX012345"),
+        "freejitsu-a0xx012345.local."
+    );
+    assert_eq!(
+        freejitsu::airscan::host_name("A0/XX 01"),
+        "freejitsu-a0-xx-01.local."
+    );
+}

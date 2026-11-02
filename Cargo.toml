@@ -9,3 +9,4 @@ license = "MIT"
 clap = { version = "4", features = ["derive"] }
 libc = "0.2"
 getrandom = "0.3"
+mdns-sd = "0.21"
