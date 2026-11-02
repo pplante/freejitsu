@@ -61,6 +61,24 @@ PDF if your client ignores it. Grayscale and black-and-white are not offered
 because the scanner only produces color JPEGs. `--airscan` conflicts with
 `--once`.
 
+## Install as a daemon (macOS)
+
+```sh
+cargo install --path .
+freejitsu install --airscan
+```
+
+`install` writes a LaunchAgent plist to
+`~/Library/LaunchAgents/com.freejitsu.daemon.plist`, loads it, and starts the
+daemon now, at login, and again after a crash. The default `--ip`, `--dpi`,
+`--page`, `--out` and `--identity` are recorded in the plist, along with
+`--simplex` and `--airscan` when you gave them. Output goes to
+`~/Library/Logs/freejitsu.log`. `freejitsu uninstall` stops and removes it.
+
+The plist does not contain the Wi-Fi password. Run once with `--password` first
+so the identity file stores it. The service runs the binary path it was
+installed from, so install after `cargo install`, not from `target/`.
+
 ## What the PDF contains
 
 One page per side. Each JPEG from the scanner is embedded unchanged, so there is no re-encoding. Pages are rotated 180 degrees in the PDF because the scanner delivers them upside down. Page size follows the JPEG pixels and the configured DPI.
