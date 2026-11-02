@@ -1,7 +1,7 @@
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
 
-use clap::{Parser, ValueEnum};
+use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub enum Dpi {
@@ -94,26 +94,50 @@ pub struct Config {
     pub airscan_port: u16,
 }
 
+#[derive(Clone, Debug)]
+pub enum Invocation {
+    Run(Config),
+    Install(Config),
+    Uninstall,
+}
+
 impl Config {
-    pub fn parse_args() -> Config {
-        let args = Args::parse();
-        let home = home_dir();
-        Config {
-            ip: args.ip,
-            out_dir: args.out.unwrap_or_else(|| home.join("Scans")),
-            dpi: args.dpi,
-            page: args.page,
-            simplex: args.simplex,
-            identity: args
-                .identity
-                .unwrap_or_else(|| home.join(".config/freejitsu/identity")),
-            password: args.password,
-            once: args.once,
-            ports: Ports::default(),
-            airscan: args.airscan,
-            airscan_port: args.airscan_port,
-        }
+    pub fn parse_args() -> Invocation {
+        invocation(Args::parse())
     }
+}
+
+fn invocation(args: Args) -> Invocation {
+    let command = args.command.clone();
+    let home = home_dir();
+    let cfg = Config {
+        ip: args.ip,
+        out_dir: args.out.unwrap_or_else(|| home.join("Scans")),
+        dpi: args.dpi,
+        page: args.page,
+        simplex: args.simplex,
+        identity: args
+            .identity
+            .unwrap_or_else(|| home.join(".config/freejitsu/identity")),
+        password: args.password,
+        once: args.once,
+        ports: Ports::default(),
+        airscan: args.airscan,
+        airscan_port: args.airscan_port,
+    };
+    match command {
+        None => Invocation::Run(cfg),
+        Some(Command::Install) => Invocation::Install(cfg),
+        Some(Command::Uninstall) => Invocation::Uninstall,
+    }
+}
+
+#[derive(Clone, Debug, Subcommand)]
+pub enum Command {
+    /// Install and start a launchd user agent (macOS)
+    Install,
+    /// Stop and remove the launchd user agent
+    Uninstall,
 }
 
 #[derive(Parser, Debug)]
@@ -124,48 +148,95 @@ impl Config {
 )]
 struct Args {
     /// Scanner IP address
-    #[arg(long, default_value = "192.168.0.130")]
+    #[arg(long, default_value = "192.168.0.130", global = true)]
     ip: Ipv4Addr,
 
     /// Output directory for PDFs
-    #[arg(long, value_name = "DIR")]
+    #[arg(long, value_name = "DIR", global = true)]
     out: Option<PathBuf>,
 
     /// Scan resolution in dpi
-    #[arg(long, value_enum, default_value = "300")]
+    #[arg(long, value_enum, default_value = "300", global = true)]
     dpi: Dpi,
 
     /// Page size
-    #[arg(long, value_enum, default_value = "auto")]
+    #[arg(long, value_enum, default_value = "auto", global = true)]
     page: PageSize,
 
     /// Write only the front side
-    #[arg(long)]
+    #[arg(long, global = true)]
     simplex: bool,
 
     /// Identity file
-    #[arg(long, value_name = "FILE")]
+    #[arg(long, value_name = "FILE", global = true)]
     identity: Option<PathBuf>,
 
     /// Scanner Wi-Fi password
-    #[arg(long)]
+    #[arg(long, global = true)]
     password: Option<String>,
 
     /// Scan one job now and exit
-    #[arg(long)]
+    #[arg(long, global = true)]
     once: bool,
 
     /// Serve eSCL/AirScan over HTTP and Bonjour
-    #[arg(long, conflicts_with = "once")]
+    #[arg(long, conflicts_with = "once", global = true)]
     airscan: bool,
 
     /// AirScan HTTP port
-    #[arg(long, default_value = "8090")]
+    #[arg(long, default_value = "8090", global = true)]
     airscan_port: u16,
+
+    #[command(subcommand)]
+    command: Option<Command>,
 }
 
-fn home_dir() -> PathBuf {
+pub(crate) fn home_dir() -> PathBuf {
     std::env::var_os("HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(args: &[&str]) -> Invocation {
+        invocation(Args::parse_from(args))
+    }
+
+    #[test]
+    fn no_subcommand_runs_the_daemon() {
+        assert!(matches!(parse(&["freejitsu"]), Invocation::Run(_)));
+        match parse(&["freejitsu", "--ip", "10.0.0.2"]) {
+            Invocation::Run(cfg) => assert_eq!(cfg.ip, Ipv4Addr::new(10, 0, 0, 2)),
+            other => panic!("expected run, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn install_accepts_flags_before_or_after_the_subcommand() {
+        for args in [
+            ["freejitsu", "install", "--airscan"],
+            ["freejitsu", "--airscan", "install"],
+        ] {
+            match parse(&args) {
+                Invocation::Install(cfg) => assert!(cfg.airscan),
+                other => panic!("expected install, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn uninstall_is_its_own_invocation() {
+        assert!(matches!(
+            parse(&["freejitsu", "uninstall"]),
+            Invocation::Uninstall
+        ));
+    }
+
+    #[test]
+    fn airscan_still_conflicts_with_once() {
+        assert!(Args::try_parse_from(["freejitsu", "--airscan", "--once"]).is_err());
+    }
 }

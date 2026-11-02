@@ -21,6 +21,7 @@ pub enum Error {
     Feed(&'static str),
     Canceled,
     Pdf(String),
+    Service(String),
 }
 
 impl fmt::Display for Error {
@@ -59,6 +60,7 @@ impl fmt::Display for Error {
             Error::Feed(reason) => write!(f, "feeder error: {reason}"),
             Error::Canceled => write!(f, "scan canceled"),
             Error::Pdf(msg) => write!(f, "PDF: {msg}"),
+            Error::Service(msg) => write!(f, "service: {msg}"),
         }
     }
 }

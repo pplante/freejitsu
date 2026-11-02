@@ -12,6 +12,7 @@ pub mod notify;
 pub mod pdf;
 pub mod scan;
 pub mod scsi;
+pub mod service;
 pub mod wire;
 
 pub use config::{Config, Dpi, PageSize, Ports};
