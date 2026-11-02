@@ -247,6 +247,9 @@ impl<'a> Parser<'a> {
                 element
                     .text
                     .push_str(&String::from_utf8_lossy(&self.bytes[start..end]));
+                if element.text.len() > 4096 {
+                    return Err(Parser::malformed("text node is too long"));
+                }
             } else if self.starts_with(b"<!") {
                 self.skip_past(b">")?;
             } else {
@@ -405,19 +408,13 @@ pub fn capabilities_xml(cap: &Capabilities) -> String {
   <pwg:MakeAndModel>{model}</pwg:MakeAndModel>
   <scan:SerialNumber>{serial}</scan:SerialNumber>
   <scan:UUID>{uuid}</scan:UUID>
-  <scan:ScannerCapabilities>
-    <pwg:Version>2.63</pwg:Version>
-    <pwg:MakeAndModel>{model}</pwg:MakeAndModel>
-    <scan:SerialNumber>{serial}</scan:SerialNumber>
-    <scan:UUID>{uuid}</scan:UUID>
-    <scan:Adf>
-      <scan:AdfOptions>
-        <scan:AdfOption>Duplex</scan:AdfOption>
-        <scan:AdfOption>DetectPaperLoaded</scan:AdfOption>
-      </scan:AdfOptions>
-      <scan:MaxFeederCapacity>50</scan:MaxFeederCapacity>
-{simplex}{duplex}    </scan:Adf>
-  </scan:ScannerCapabilities>
+  <scan:Adf>
+    <scan:FeederCapacity>50</scan:FeederCapacity>
+    <scan:AdfOptions>
+      <scan:AdfOption>Duplex</scan:AdfOption>
+      <scan:AdfOption>DetectPaperLoaded</scan:AdfOption>
+    </scan:AdfOptions>
+{simplex}{duplex}  </scan:Adf>
 </scan:ScannerCapabilities>
 "#,
         simplex = input_caps("AdfSimplexInputCaps"),
@@ -427,51 +424,42 @@ pub fn capabilities_xml(cap: &Capabilities) -> String {
 
 fn input_caps(tag: &str) -> String {
     format!(
-        r#"      <scan:{tag}>
-        <scan:ColorModes>
-          <scan:ColorMode>RGB24</scan:ColorMode>
-        </scan:ColorModes>
-        <scan:DocumentFormats>
-          <pwg:DocumentFormat>image/jpeg</pwg:DocumentFormat>
-          <scan:DocumentFormatExt>image/jpeg</scan:DocumentFormatExt>
-          <pwg:DocumentFormat>application/pdf</pwg:DocumentFormat>
-          <scan:DocumentFormatExt>application/pdf</scan:DocumentFormatExt>
-        </scan:DocumentFormats>
-        <scan:SupportedResolutions>
-          <scan:DiscreteResolutions>
-            <scan:DiscreteResolution><scan:XResolution>150</scan:XResolution><scan:YResolution>150</scan:YResolution></scan:DiscreteResolution>
-            <scan:DiscreteResolution><scan:XResolution>200</scan:XResolution><scan:YResolution>200</scan:YResolution></scan:DiscreteResolution>
-            <scan:DiscreteResolution><scan:XResolution>300</scan:XResolution><scan:YResolution>300</scan:YResolution></scan:DiscreteResolution>
-            <scan:DiscreteResolution><scan:XResolution>600</scan:XResolution><scan:YResolution>600</scan:YResolution></scan:DiscreteResolution>
-          </scan:DiscreteResolutions>
-        </scan:SupportedResolutions>
-        <scan:SettingProfiles>
-          <scan:SettingProfile>
-            <scan:ColorModes><scan:ColorMode>RGB24</scan:ColorMode></scan:ColorModes>
-            <scan:SupportedIntents>
-              <scan:Intent>Document</scan:Intent>
-              <scan:Intent>TextAndGraphic</scan:Intent>
-              <scan:Intent>Photo</scan:Intent>
-            </scan:SupportedIntents>
-          </scan:SettingProfile>
-        </scan:SettingProfiles>
-        <scan:MaxScanRegions>1</scan:MaxScanRegions>
-        <scan:ScanRegions>
-          <scan:ScanRegion>
-            <scan:XOffset>0</scan:XOffset>
-            <scan:YOffset>0</scan:YOffset>
-            <scan:Width>2612</scan:Width>
-            <scan:Height>4407</scan:Height>
-            <scan:ContentRegionUnits>escl:ThreeHundredthsOfInches</scan:ContentRegionUnits>
-          </scan:ScanRegion>
-        </scan:ScanRegions>
-        <scan:MaxOpticalXResolution>600</scan:MaxOpticalXResolution>
-        <scan:MaxOpticalYResolution>600</scan:MaxOpticalYResolution>
-        <scan:MinWidth>300</scan:MinWidth>
-        <scan:MinHeight>300</scan:MinHeight>
-        <scan:MaxWidth>2612</scan:MaxWidth>
-        <scan:MaxHeight>4407</scan:MaxHeight>
-      </scan:{tag}>
+        r#"    <scan:{tag}>
+      <scan:MinWidth>300</scan:MinWidth>
+      <scan:MaxWidth>2612</scan:MaxWidth>
+      <scan:MinHeight>300</scan:MinHeight>
+      <scan:MaxHeight>4407</scan:MaxHeight>
+      <scan:MaxScanRegions>1</scan:MaxScanRegions>
+      <scan:SettingProfiles>
+        <scan:SettingProfile>
+          <scan:ColorModes>
+            <scan:ColorMode>RGB24</scan:ColorMode>
+          </scan:ColorModes>
+          <scan:DocumentFormats>
+            <pwg:DocumentFormat>image/jpeg</pwg:DocumentFormat>
+            <scan:DocumentFormatExt>image/jpeg</scan:DocumentFormatExt>
+            <pwg:DocumentFormat>application/pdf</pwg:DocumentFormat>
+            <scan:DocumentFormatExt>application/pdf</scan:DocumentFormatExt>
+          </scan:DocumentFormats>
+          <scan:SupportedResolutions>
+            <scan:DiscreteResolutions>
+              <scan:DiscreteResolution><scan:XResolution>150</scan:XResolution><scan:YResolution>150</scan:YResolution></scan:DiscreteResolution>
+              <scan:DiscreteResolution><scan:XResolution>200</scan:XResolution><scan:YResolution>200</scan:YResolution></scan:DiscreteResolution>
+              <scan:DiscreteResolution><scan:XResolution>300</scan:XResolution><scan:YResolution>300</scan:YResolution></scan:DiscreteResolution>
+              <scan:DiscreteResolution><scan:XResolution>600</scan:XResolution><scan:YResolution>600</scan:YResolution></scan:DiscreteResolution>
+            </scan:DiscreteResolutions>
+          </scan:SupportedResolutions>
+          <scan:ColorSpaces><scan:ColorSpace>sRGB</scan:ColorSpace></scan:ColorSpaces>
+        </scan:SettingProfile>
+      </scan:SettingProfiles>
+      <scan:SupportedIntents>
+        <scan:Intent>Document</scan:Intent>
+        <scan:Intent>TextAndGraphic</scan:Intent>
+        <scan:Intent>Photo</scan:Intent>
+      </scan:SupportedIntents>
+      <scan:MaxOpticalXResolution>600</scan:MaxOpticalXResolution>
+      <scan:MaxOpticalYResolution>600</scan:MaxOpticalYResolution>
+    </scan:{tag}>
 "#
     )
 }
@@ -541,7 +529,7 @@ pub fn device_uuid(model: &str, serial: &str) -> String {
     const OFFSET: u128 = 0x6c62_272e_07bb_0142_62b8_2175_6295_c58d;
     const PRIME: u128 = 0x0000_0000_0100_0000_0000_0000_0000_013b;
     let mut hash = OFFSET;
-    for byte in model.bytes().chain([b'/']).chain(serial.bytes()) {
+    for byte in model.bytes().chain(*b"/").chain(serial.bytes()) {
         hash ^= u128::from(byte);
         hash = hash.wrapping_mul(PRIME);
     }

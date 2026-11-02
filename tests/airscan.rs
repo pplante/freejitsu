@@ -411,6 +411,10 @@ fn cancel_between_sheets_leaves_no_pdf() {
     }
     assert!(canceled, "job did not report cancellation");
     assert!(pdfs(&dir.join("out")).is_empty());
+    let leftovers: Vec<_> = std::fs::read_dir(dir.join("out"))
+        .map(|entries| entries.filter_map(|entry| entry.ok()).collect())
+        .unwrap_or_default();
+    assert!(leftovers.is_empty(), "cancel left {leftovers:?}");
 }
 
 #[test]

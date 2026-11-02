@@ -141,10 +141,7 @@ fn rejects_malformed_xml() {
         parse("<ScanSettings>&xxe;</ScanSettings>"),
         Err(SettingsError::BadXml(_))
     ));
-    assert!(matches!(
-        parse("<ScanSettings><Intent>Document</Intent></ScanSettings>"),
-        Ok(_)
-    ));
+    assert!(parse("<ScanSettings><Intent>Document</Intent></ScanSettings>").is_ok());
 }
 
 #[test]
@@ -169,6 +166,12 @@ fn capabilities_describe_the_advertised_scanner() {
     });
     assert!(xml.contains("<pwg:MakeAndModel>ScanSnap iX500</pwg:MakeAndModel>"));
     assert!(xml.contains("<scan:SerialNumber>A0XX012345</scan:SerialNumber>"));
+    assert_eq!(
+        xml.matches("ScannerCapabilities").count(),
+        2,
+        "Adf must sit directly under the root"
+    );
+    assert!(xml.contains("<scan:FeederCapacity>50</scan:FeederCapacity>"));
     assert!(xml.contains("<scan:ColorMode>RGB24</scan:ColorMode>"));
     assert!(!xml.contains("Grayscale8"));
     assert!(xml.contains("<scan:XResolution>600</scan:XResolution>"));
@@ -229,4 +232,13 @@ fn device_uuid_is_stable_and_version_five() {
     assert!(matches!(&uuid[19..20], "8" | "9" | "a" | "b"));
     assert_eq!(uuid, device_uuid("ScanSnap iX500", "A0XX012345"));
     assert_ne!(uuid, device_uuid("ScanSnap iX500", "A0XX012346"));
+}
+
+#[test]
+fn rejects_cdata_text_over_4096_bytes() {
+    let body = format!(
+        "<ScanSettings><Intent><![CDATA[{}]]></Intent></ScanSettings>",
+        "a".repeat(5000)
+    );
+    assert!(matches!(parse(&body), Err(SettingsError::BadXml(_))));
 }

@@ -543,7 +543,10 @@ fn accept_loop(weak: Weak<AirScan>) {
                     drop(service);
                     thread::sleep(Duration::from_millis(5));
                 }
-                Err(_) => return,
+                Err(_) => {
+                    drop(service);
+                    thread::sleep(Duration::from_millis(50));
+                }
             },
             None => return,
         }
