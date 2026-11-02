@@ -43,6 +43,8 @@ fn config(scanner: &support::FakeScanner, dir: &Path, simplex: bool) -> Config {
             discovery: scanner.discovery.port,
             startup: 0,
         },
+        airscan: false,
+        airscan_port: 0,
     }
 }
 

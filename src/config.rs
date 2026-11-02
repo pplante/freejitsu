@@ -90,6 +90,8 @@ pub struct Config {
     pub password: Option<String>,
     pub once: bool,
     pub ports: Ports,
+    pub airscan: bool,
+    pub airscan_port: u16,
 }
 
 impl Config {
@@ -108,6 +110,8 @@ impl Config {
             password: args.password,
             once: args.once,
             ports: Ports::default(),
+            airscan: args.airscan,
+            airscan_port: args.airscan_port,
         }
     }
 }
@@ -150,6 +154,14 @@ struct Args {
     /// Scan one job now and exit
     #[arg(long)]
     once: bool,
+
+    /// Serve eSCL/AirScan over HTTP and Bonjour
+    #[arg(long, conflicts_with = "once")]
+    airscan: bool,
+
+    /// AirScan HTTP port
+    #[arg(long, default_value = "8090")]
+    airscan_port: u16,
 }
 
 fn home_dir() -> PathBuf {

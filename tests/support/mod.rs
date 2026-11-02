@@ -301,6 +301,7 @@ pub struct ScanConfig {
     pub sheets: Vec<FakeSheet>,
     pub jam_at: Vec<usize>,
     pub info: [u8; 20],
+    pub delay: std::time::Duration,
 }
 
 impl Default for ScanConfig {
@@ -316,6 +317,7 @@ impl Default for ScanConfig {
             sheets: Vec::new(),
             jam_at: Vec::new(),
             info,
+            delay: std::time::Duration::ZERO,
         }
     }
 }
@@ -441,6 +443,9 @@ fn serve_scan(mut stream: TcpStream, config: &ScanConfig, log: Arc<Mutex<ScanLog
                     status = 2;
                     pending_sense = sense(3, 0x80, 0x01, false);
                 } else {
+                    if !config.delay.is_zero() {
+                        thread::sleep(config.delay);
+                    }
                     current = Some(next_sheet);
                     next_sheet += 1;
                     front_done = false;
@@ -540,4 +545,70 @@ impl FakeScanner {
             mac,
         }
     }
+}
+
+pub struct HttpResponse {
+    pub status: u16,
+    pub headers: Vec<(String, String)>,
+    pub body: Vec<u8>,
+}
+
+impl HttpResponse {
+    pub fn header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .iter()
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| value.as_str())
+    }
+}
+
+pub fn http_request(addr: std::net::SocketAddr, request: &[u8]) -> HttpResponse {
+    let mut stream = TcpStream::connect(addr).expect("connect http");
+    stream.write_all(request).expect("write http");
+    let mut raw = Vec::new();
+    stream.read_to_end(&mut raw).expect("read http");
+    let split = raw
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .expect("http head");
+    let head = std::str::from_utf8(&raw[..split]).expect("http head utf8");
+    let mut lines = head.split("\r\n");
+    let status = lines
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+        .and_then(|word| word.parse().ok())
+        .expect("http status");
+    let headers = lines
+        .filter_map(|line| line.split_once(':'))
+        .map(|(key, value)| (key.to_ascii_lowercase(), value.trim().to_string()))
+        .collect();
+    HttpResponse {
+        status,
+        headers,
+        body: raw[split + 4..].to_vec(),
+    }
+}
+
+pub fn http_get(addr: std::net::SocketAddr, path: &str) -> HttpResponse {
+    http_request(
+        addr,
+        format!("GET {path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n").as_bytes(),
+    )
+}
+
+pub fn http_post(addr: std::net::SocketAddr, path: &str, body: &[u8]) -> HttpResponse {
+    let head = format!(
+        "POST {path} HTTP/1.1\r\nHost: {addr}\r\nContent-Type: text/xml\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    let mut request = head.into_bytes();
+    request.extend_from_slice(body);
+    http_request(addr, &request)
+}
+
+pub fn http_delete(addr: std::net::SocketAddr, path: &str) -> HttpResponse {
+    http_request(
+        addr,
+        format!("DELETE {path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n").as_bytes(),
+    )
 }
