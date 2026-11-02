@@ -42,6 +42,24 @@ One immediate scan, no daemon:
 | `--identity` | `~/.config/freejitsu/identity` | Paired host ID, MAC and port |
 | `--password` | stored | Scanner Wi-Fi password, saved after a successful registration |
 | `--once` | off | Scan now and exit |
+| `--airscan` | off | Serve eSCL/AirScan over HTTP and Bonjour |
+| `--airscan-port` | `8090` | AirScan HTTP port |
+
+## AirScan
+
+Run with `--airscan` to publish the scanner over eSCL/AirScan. macOS sees it in
+Image Capture and Preview without a driver.
+
+```sh
+./target/release/freejitsu --airscan
+```
+
+The capabilities URL is printed at startup. One scan runs at a time; a Scan
+button press during a job is ignored. Every job still writes a PDF to the
+output directory. JPEG pages carry an EXIF 180-degree orientation tag; choose
+PDF if your client ignores it. Grayscale and black-and-white are not offered
+because the scanner only produces color JPEGs. `--airscan` conflicts with
+`--once`.
 
 ## What the PDF contains
 

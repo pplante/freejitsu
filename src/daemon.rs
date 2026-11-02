@@ -1,6 +1,8 @@
+use std::sync::Arc;
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::time::Duration;
 
+use crate::airscan::{AirScan, ScanLock, Session};
 use crate::config::{Config, Dpi};
 use crate::control;
 use crate::discovery::{self, Heartbeat, ScannerInfo};
@@ -47,6 +49,21 @@ pub fn run(cfg: Config) -> Result<()> {
     let _startup = notify::listen(cfg.ip, cfg.ports.startup, tx.clone())?;
     drop(tx);
 
+    let scan_lock = Arc::new(ScanLock::new());
+    let airscan = if cfg.airscan {
+        Some(AirScan::start(cfg.clone(), Arc::clone(&scan_lock))?)
+    } else {
+        None
+    };
+    if let Some(service) = &airscan {
+        let ip = iface::local_ip_towards(cfg.ip).unwrap_or(cfg.ip);
+        eprintln!(
+            "freejitsu: eSCL http://{}:{}/eSCL/ScannerCapabilities",
+            ip,
+            service.local_addr().port()
+        );
+    }
+
     let mut stored = stored;
     let mut info: Option<ScannerInfo> = None;
     let mut heartbeat: Option<Heartbeat> = None;
@@ -55,9 +72,15 @@ pub fn run(cfg: Config) -> Result<()> {
     loop {
         if !up {
             match open_session(&cfg, &mut stored, mac) {
-                Ok((found, _identity)) => {
+                Ok((found, identity)) => {
                     eprintln!("freejitsu: registered with {}", found.name);
                     eprintln!("freejitsu: waiting for the Scan button");
+                    if let Some(service) = &airscan {
+                        service.set_session(Some(Session {
+                            info: found.clone(),
+                            identity,
+                        }));
+                    }
                     heartbeat = Some(Heartbeat::start(&found, mac, cfg.ports.discovery));
                     info = Some(found);
                     up = true;
@@ -78,28 +101,40 @@ pub fn run(cfg: Config) -> Result<()> {
 
         match rx.recv_timeout(Duration::from_secs(2)) {
             Ok(Event::Button) => {
-                if let (Some(found), Some(identity)) = (info.as_ref(), stored.as_ref()) {
-                    match capture(
-                        &cfg,
-                        found,
-                        identity,
-                        cfg.dpi,
-                        cfg.page.into(),
-                        cfg.simplex,
-                        &mut |_| Ok(()),
-                    ) {
-                        Ok(capture) => {
-                            eprintln!("freejitsu: wrote {}", capture.path.display());
-                            if let Some(err) = capture.early {
-                                eprintln!("freejitsu: scan ended early: {err}");
-                            }
+                if let Some(guard) = scan_lock.try_acquire() {
+                    if let (Some(found), Some(identity)) = (info.as_ref(), stored.as_ref()) {
+                        let result = capture(
+                            &cfg,
+                            found,
+                            identity,
+                            cfg.dpi,
+                            cfg.page.into(),
+                            cfg.simplex,
+                            &mut |_| Ok(()),
+                        );
+                        if let Some(service) = &airscan {
+                            service.note_result(&result);
                         }
-                        Err(err) => eprintln!("freejitsu: scan failed: {err}"),
+                        match result {
+                            Ok(capture) => {
+                                eprintln!("freejitsu: wrote {}", capture.path.display());
+                                if let Some(err) = capture.early {
+                                    eprintln!("freejitsu: scan ended early: {err}");
+                                }
+                            }
+                            Err(err) => eprintln!("freejitsu: scan failed: {err}"),
+                        }
                     }
+                    drop(guard);
+                } else {
+                    eprintln!("freejitsu: scanner busy, ignoring the Scan button");
                 }
             }
             Ok(Event::PowerOff) => {
                 eprintln!("freejitsu: scanner powered off");
+                if let Some(service) = &airscan {
+                    service.set_session(None);
+                }
                 heartbeat = None;
                 info = None;
                 up = false;
@@ -108,12 +143,18 @@ pub fn run(cfg: Config) -> Result<()> {
             Err(RecvTimeoutError::Timeout) => {
                 if !heartbeat.as_ref().is_some_and(Heartbeat::alive) {
                     eprintln!("freejitsu: heartbeat lost");
+                    if let Some(service) = &airscan {
+                        service.set_session(None);
+                    }
                     heartbeat = None;
                     info = None;
                     up = false;
                 }
             }
             Err(RecvTimeoutError::Disconnected) => {
+                if let Some(service) = &airscan {
+                    service.set_session(None);
+                }
                 heartbeat = None;
                 info = None;
                 up = false;

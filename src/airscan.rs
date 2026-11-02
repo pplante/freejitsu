@@ -304,11 +304,14 @@ impl AirScan {
             jobs.push(Arc::clone(&job));
         }
 
-        let location = format!(
-            "http://{}/eSCL/ScanJobs/{}",
-            request.header("host").unwrap_or("127.0.0.1"),
-            job.id
-        );
+        let host = match request.header("host") {
+            Some(host) => host.to_string(),
+            None => {
+                let ip = crate::iface::local_ip_towards(self.cfg.ip).unwrap_or(Ipv4Addr::LOCALHOST);
+                format!("{ip}:{}", self.local.port())
+            }
+        };
+        let location = format!("http://{host}/eSCL/ScanJobs/{}", job.id);
         let worker = Worker {
             cfg: self.cfg.clone(),
             session,
