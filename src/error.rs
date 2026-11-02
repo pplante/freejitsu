@@ -33,6 +33,10 @@ impl fmt::Display for Error {
                 f,
                 "registration rejected with status -2: the scanner wants its Wi-Fi password (use --password)"
             ),
+            Error::Registration(-3) => write!(
+                f,
+                "registration rejected with status -3: wrong Wi-Fi password (check --password)"
+            ),
             Error::Registration(-7) => write!(
                 f,
                 "registration rejected with status -7: this host is not paired with the scanner; pair over USB once with ScanSnap Home"

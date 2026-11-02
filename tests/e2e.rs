@@ -35,7 +35,7 @@ fn config(scanner: &support::FakeScanner, dir: &Path, simplex: bool) -> Config {
         page: PageSize::Auto,
         simplex,
         identity: dir.join("identity"),
-        password: None,
+        password: Some("2345".into()),
         once: true,
         ports: Ports {
             discovery: scanner.discovery.port,
@@ -95,6 +95,7 @@ fn once_registers_scans_and_writes_a_pdf() {
         .expect("load identity")
         .expect("identity exists");
     assert_eq!(stored.host_id, scanner.paired_host_id);
+    assert_eq!(stored.password.as_deref(), Some("2345"));
     assert_eq!(&body[16..20], &u32::from(stored.host_port).to_be_bytes());
     assert_eq!(control.macs, vec![stored.mac]);
 

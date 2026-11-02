@@ -22,6 +22,8 @@ cargo build --release
 
 Put paper in the feeder and press Scan. The PDF lands in `~/Scans` as `scan-YYYYMMDD-HHMMSS.pdf`.
 
+If the scanner has a Wi-Fi password, pass it once with `--password`; it is saved in the identity file (mode 0600) after a successful registration. Status -2 means a password is needed, status -3 means it is wrong.
+
 One immediate scan, no daemon:
 
 ```sh
@@ -38,7 +40,7 @@ One immediate scan, no daemon:
 | `--page` | `auto` | `auto`, `a4`, `letter`, `legal`, `b5`, `a5`, `b6` |
 | `--simplex` | off | Keep front sides only |
 | `--identity` | `~/.config/freejitsu/identity` | Paired host ID, MAC and port |
-| `--password` | last four serial digits | Scanner Wi-Fi password |
+| `--password` | stored | Scanner Wi-Fi password, saved after a successful registration |
 | `--once` | off | Scan now and exit |
 
 ## What the PDF contains

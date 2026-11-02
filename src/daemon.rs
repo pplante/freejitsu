@@ -20,9 +20,8 @@ pub fn run(cfg: Config) -> Result<()> {
     eprintln!("freejitsu: host MAC {}", mac_text(mac));
 
     if cfg.once {
-        let info = discovery::discover(cfg.ip, mac, cfg.ports.discovery)?;
-        let identity = identity::ensure(&cfg.identity, &info, mac)?;
-        register(&cfg, &info, &identity)?;
+        let mut stored = stored;
+        let (info, identity) = open_session(&cfg, &mut stored, mac)?;
         let path = capture(&cfg, &info, &identity)?;
         println!("{}", path.display());
         return Ok(());
@@ -45,7 +44,7 @@ pub fn run(cfg: Config) -> Result<()> {
     loop {
         if !up {
             match open_session(&cfg, &mut stored, mac) {
-                Ok(found) => {
+                Ok((found, _identity)) => {
                     eprintln!("freejitsu: registered with {}", found.name);
                     eprintln!("freejitsu: waiting for the Scan button");
                     heartbeat = Some(Heartbeat::start(&found, mac, cfg.ports.discovery));
@@ -113,24 +112,34 @@ fn mac_text(mac: [u8; 6]) -> String {
         .join(":")
 }
 
-fn choose_password(cfg: &Config, identity: &Identity, info: &ScannerInfo) -> String {
+fn choose_password(cfg: &Config, identity: &Identity) -> String {
     cfg.password
         .clone()
         .or_else(|| identity.password.clone())
-        .unwrap_or_else(|| control::default_password(&info.serial))
+        .unwrap_or_default()
 }
 
-fn open_session(cfg: &Config, stored: &mut Option<Identity>, mac: [u8; 6]) -> Result<ScannerInfo> {
+fn open_session(
+    cfg: &Config,
+    stored: &mut Option<Identity>,
+    mac: [u8; 6],
+) -> Result<(ScannerInfo, Identity)> {
     let info = discovery::discover(cfg.ip, mac, cfg.ports.discovery)?;
-    let identity = identity::ensure(&cfg.identity, &info, mac)?;
+    let mut identity = identity::ensure(&cfg.identity, &info, mac)?;
     register(cfg, &info, &identity)?;
-    *stored = Some(identity);
-    Ok(info)
+    if let Some(password) = &cfg.password
+        && identity.password.as_deref() != Some(password.as_str())
+    {
+        identity.password = Some(password.clone());
+        identity::store(&cfg.identity, &identity)?;
+    }
+    *stored = Some(identity.clone());
+    Ok((info, identity))
 }
 
 fn register(cfg: &Config, info: &ScannerInfo, identity: &Identity) -> Result<()> {
     let host_ip = iface::local_ip_towards(cfg.ip)?;
-    let password = choose_password(cfg, identity, info);
+    let password = choose_password(cfg, identity);
     control::register(info, identity, host_ip, &password, control::local_now())
 }
 
