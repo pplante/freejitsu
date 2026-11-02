@@ -19,6 +19,7 @@ pub enum Error {
     },
     NoPaper,
     Feed(&'static str),
+    Canceled,
     Pdf(String),
 }
 
@@ -56,6 +57,7 @@ impl fmt::Display for Error {
             }
             Error::NoPaper => write!(f, "no paper in the feeder"),
             Error::Feed(reason) => write!(f, "feeder error: {reason}"),
+            Error::Canceled => write!(f, "scan canceled"),
             Error::Pdf(msg) => write!(f, "PDF: {msg}"),
         }
     }

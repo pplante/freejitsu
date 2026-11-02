@@ -1,6 +1,7 @@
 mod support;
 
 use std::fs;
+use std::net::Ipv4Addr;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
@@ -9,6 +10,7 @@ use freejitsu::control::encode_password;
 use freejitsu::daemon;
 use freejitsu::error::Error;
 use freejitsu::identity;
+use freejitsu::scan::Area;
 
 fn fixture() -> Vec<u8> {
     fs::read("tests/fixtures/page.jpg").expect("page.jpg")
@@ -170,4 +172,124 @@ fn registration_status_is_read_at_reply_offset_eight() {
         let text = err.to_string();
         assert!(text.contains(needle), "{status} message was {text:?}");
     }
+}
+
+fn session(
+    scanner: &support::FakeScanner,
+    dir: &Path,
+    simplex: bool,
+) -> (
+    Config,
+    freejitsu::discovery::ScannerInfo,
+    freejitsu::identity::Identity,
+) {
+    let cfg = config(scanner, dir, simplex);
+    let info = support::scanner_info(Ipv4Addr::LOCALHOST, scanner.scan.port, scanner.control.port);
+    let identity = freejitsu::identity::Identity {
+        host_id: scanner.paired_host_id,
+        mac: scanner.mac,
+        host_port: 55265,
+        password: None,
+    };
+    (cfg, info, identity)
+}
+
+#[test]
+fn capture_cancel_drops_the_partial_pdf() {
+    let jpeg = fixture();
+    let scanner = support::FakeScanner::start(
+        support::ScanConfig {
+            sheets: vec![
+                support::FakeSheet::new(jpeg.clone(), jpeg.clone()),
+                support::FakeSheet::new(jpeg.clone(), jpeg.clone()),
+            ],
+            ..support::ScanConfig::default()
+        },
+        0,
+        6,
+    );
+    let dir = support::temp_dir("e2e-cancel");
+    let (cfg, info, identity) = session(&scanner, &dir, false);
+
+    let err = daemon::capture(
+        &cfg,
+        &info,
+        &identity,
+        Dpi::D300,
+        Area::from(PageSize::Auto),
+        false,
+        &mut |_: &freejitsu::scan::Sheet| Err(Error::Canceled),
+    )
+    .expect_err("cancel");
+
+    assert!(matches!(err, Error::Canceled));
+    assert!(pdfs(&dir.join("out")).is_empty());
+    let log = scanner.scan.snapshot();
+    assert_eq!(log.connections, 2, "scan plus the D6 release connection");
+    assert_eq!(log.cdbs.last().map(|cdb| cdb[0]), Some(0xd6));
+}
+
+#[test]
+fn capture_reports_a_jam_after_pages_as_early() {
+    let jpeg = fixture();
+    let scanner = support::FakeScanner::start(
+        support::ScanConfig {
+            sheets: vec![
+                support::FakeSheet::new(jpeg.clone(), jpeg.clone()),
+                support::FakeSheet::new(jpeg.clone(), jpeg.clone()),
+            ],
+            jam_at: vec![1],
+            ..support::ScanConfig::default()
+        },
+        0,
+        6,
+    );
+    let dir = support::temp_dir("e2e-early");
+    let (cfg, info, identity) = session(&scanner, &dir, true);
+
+    let capture = daemon::capture(
+        &cfg,
+        &info,
+        &identity,
+        Dpi::D300,
+        Area::from(PageSize::Auto),
+        true,
+        &mut |_| Ok(()),
+    )
+    .expect("partial PDF");
+
+    assert!(matches!(capture.early, Some(Error::Feed("paper jam"))));
+    assert!(capture.path.exists());
+}
+
+#[test]
+fn capture_takes_the_dpi_and_area_from_the_caller() {
+    let jpeg = fixture();
+    let scanner = support::FakeScanner::start(
+        support::ScanConfig {
+            sheets: vec![support::FakeSheet::new(jpeg.clone(), jpeg.clone())],
+            ..support::ScanConfig::default()
+        },
+        0,
+        6,
+    );
+    let dir = support::temp_dir("e2e-dpi");
+    let (cfg, info, identity) = session(&scanner, &dir, true);
+
+    daemon::capture(
+        &cfg,
+        &info,
+        &identity,
+        Dpi::D600,
+        Area::from(PageSize::A4),
+        true,
+        &mut |_| Ok(()),
+    )
+    .expect("scan");
+
+    let log = scanner.scan.snapshot();
+    assert_eq!(
+        log.out[3],
+        freejitsu::scan::window_block(Dpi::D600, PageSize::A4.into())
+    );
 }

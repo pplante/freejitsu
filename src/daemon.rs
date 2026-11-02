@@ -1,7 +1,7 @@
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::time::Duration;
 
-use crate::config::Config;
+use crate::config::{Config, Dpi};
 use crate::control;
 use crate::discovery::{self, Heartbeat, ScannerInfo};
 use crate::error::{Error, Result};
@@ -22,8 +22,19 @@ pub fn run(cfg: Config) -> Result<()> {
     if cfg.once {
         let mut stored = stored;
         let (info, identity) = open_session(&cfg, &mut stored, mac)?;
-        let path = capture(&cfg, &info, &identity)?;
-        println!("{}", path.display());
+        let capture = capture(
+            &cfg,
+            &info,
+            &identity,
+            cfg.dpi,
+            cfg.page.into(),
+            cfg.simplex,
+            &mut |_| Ok(()),
+        )?;
+        println!("{}", capture.path.display());
+        if let Some(err) = capture.early {
+            eprintln!("freejitsu: scan ended early: {err}");
+        }
         return Ok(());
     }
 
@@ -68,8 +79,21 @@ pub fn run(cfg: Config) -> Result<()> {
         match rx.recv_timeout(Duration::from_secs(2)) {
             Ok(Event::Button) => {
                 if let (Some(found), Some(identity)) = (info.as_ref(), stored.as_ref()) {
-                    match capture(&cfg, found, identity) {
-                        Ok(path) => eprintln!("freejitsu: wrote {}", path.display()),
+                    match capture(
+                        &cfg,
+                        found,
+                        identity,
+                        cfg.dpi,
+                        cfg.page.into(),
+                        cfg.simplex,
+                        &mut |_| Ok(()),
+                    ) {
+                        Ok(capture) => {
+                            eprintln!("freejitsu: wrote {}", capture.path.display());
+                            if let Some(err) = capture.early {
+                                eprintln!("freejitsu: scan ended early: {err}");
+                            }
+                        }
                         Err(err) => eprintln!("freejitsu: scan failed: {err}"),
                     }
                 }
@@ -143,20 +167,33 @@ fn register(cfg: &Config, info: &ScannerInfo, identity: &Identity) -> Result<()>
     control::register(info, identity, host_ip, &password, control::local_now())
 }
 
-fn capture(cfg: &Config, info: &ScannerInfo, identity: &Identity) -> Result<std::path::PathBuf> {
+#[derive(Debug)]
+pub struct Capture {
+    pub path: std::path::PathBuf,
+    pub early: Option<Error>,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn capture(
+    cfg: &Config,
+    info: &ScannerInfo,
+    identity: &Identity,
+    dpi: Dpi,
+    area: scan::Area,
+    simplex: bool,
+    on_sheet: &mut dyn FnMut(&scan::Sheet) -> Result<()>,
+) -> Result<Capture> {
     let dest = output_path(cfg);
     let mut pdf = PdfWriter::create(dest)?;
-    let dpi = cfg.dpi;
-    let simplex = cfg.simplex;
 
     let result = match ScsiChannel::open(info, identity.mac) {
         Ok(mut channel) => {
-            let result = scan::scan(&mut channel, dpi, cfg.page.into(), &mut |sheet| {
+            let result = scan::scan(&mut channel, dpi, area, &mut |sheet| {
                 pdf.add_page(&sheet.front, dpi.as_u16())?;
                 if !simplex {
                     pdf.add_page(&sheet.back, dpi.as_u16())?;
                 }
-                Ok(())
+                on_sheet(&sheet)
             });
             drop(channel);
             result
@@ -173,17 +210,25 @@ fn capture(cfg: &Config, info: &ScannerInfo, identity: &Identity) -> Result<std:
             if pdf.pages() == 0 {
                 return Err(Error::NoPaper);
             }
-            pdf.finish()
+            Ok(Capture {
+                path: pdf.finish()?,
+                early: None,
+            })
         }
         Err(err @ Error::Pdf(_)) => {
             drop(pdf);
             Err(err)
         }
+        Err(Error::Canceled) => {
+            drop(pdf);
+            Err(Error::Canceled)
+        }
         Err(err) => {
             if pdf.pages() > 0 {
-                let path = pdf.finish()?;
-                eprintln!("freejitsu: scan ended early: {err}");
-                Ok(path)
+                Ok(Capture {
+                    path: pdf.finish()?,
+                    early: Some(err),
+                })
             } else {
                 drop(pdf);
                 Err(err)
